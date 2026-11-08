@@ -1,13 +1,12 @@
-"""FastMCP stdio server. Write tools are registered only when ISPACE_ALLOW_WRITE=1."""
+"""FastMCP stdio server."""
 from mcp.server.fastmcp import FastMCP
 
 from . import tools
-from .client import write_allowed
 
 
 def build() -> FastMCP:
     mcp = FastMCP("ispace")
-    for fn in tools.READ + (tools.WRITE if write_allowed() else []):
+    for fn in tools.READ + tools.WRITE:
         mcp.tool()(fn)
     return mcp
 

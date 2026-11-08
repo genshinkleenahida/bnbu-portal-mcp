@@ -1,9 +1,8 @@
-"""Every tool, written once: the MCP server registers these functions and the CLI turns them into commands.
-Write tools exist only with ISPACE_ALLOW_WRITE=1 and do nothing until called with confirm=true."""
+"""Every tool, written once: the MCP server registers these functions and the CLI turns them into commands."""
 from pathlib import Path
 
 from . import evaluation, notices, textinfo
-from .client import ISpace, ISpaceError, write_allowed
+from .client import ISpace, ISpaceError
 from .portal import Portal
 
 _client = _portal = None
@@ -124,34 +123,21 @@ def leave_form() -> dict:
 
 
 # ---- write tools ----
-def _need_write() -> None:
-    if not write_allowed():
-        raise ISpaceError("Write operations are disabled; set ISPACE_ALLOW_WRITE=1 to enable them.")
+def upload_and_save_submission(assignid: int, file_paths: list[str]) -> dict:
+    """Save one or more local files as a single submission draft (not yet submitted for grading)."""
+    paths = [Path(p).expanduser() for p in file_paths]
+    for p in paths:
+        if not p.is_file():
+            raise ISpaceError(f"File not found: {p}")
+    return client().upload_and_save_submission(assignid, [str(p) for p in paths])
 
 
-def upload_and_save_submission(assignid: int, file_path: str, confirm: bool = False) -> dict:
-    """WRITE: save a local file as the submission draft. Dry-run unless confirm=true; get the user's explicit OK first."""
-    _need_write()
-    p = Path(file_path).expanduser()
-    if not p.is_file():
-        raise ISpaceError(f"File not found: {p}")
-    if not confirm:
-        return {"dry_run": True, "would_do": f"Upload {p.name} as the draft for assignment {assignid}.",
-                "status": client().submission_status(assignid)}
-    return client().upload_and_save_submission(assignid, str(p))
-
-
-def submit_for_grading(assignid: int, confirm: bool = False) -> dict:
-    """WRITE: finalize an assignment (usually irreversible). Dry-run unless confirm=true; get the user's explicit OK first."""
-    _need_write()
-    if not confirm:
-        return {"dry_run": True, "would_do": f"Submit assignment {assignid} for grading.",
-                "status": client().submission_status(assignid)}
+def submit_for_grading(assignid: int) -> dict:
+    """Submit an assignment for grading (usually irreversible)."""
     return client().submit_for_grading(assignid)
 
 
-def _evaluate(course: str | None, comment: str, confirm: bool) -> dict:
-    _need_write()
+def _evaluate(course: str | None, comment: str) -> dict:
     secs = portal().mis_evaluations()
     if course:
         secs = [s for s in secs if course == s["section_id"] or course.lower() in f"{s['course']} {s['instructor']}".lower()]
@@ -161,31 +147,24 @@ def _evaluate(course: str | None, comment: str, confirm: bool) -> dict:
     if course and len(pending) != 1:
         raise ISpaceError("Already evaluated (it cannot be refilled)." if not pending else
                           "More than one match: " + "; ".join(f"{s['course']} ({s['instructor']})" for s in pending))
-    plans = [(s, evaluation.build_plan(evaluation.parse_form(portal().mis_get(
-        "/mis/student/te/question.do", {"sectionId": s["section_id"]})), comment)) for s in pending]
-    if not confirm:
-        return {"dry_run": True, "would_do": "Submit these answers. MIS cannot refill an evaluation. Nothing was sent; "
-                "get the user's explicit OK, then call again with confirm=true.",
-                "plans": [{"course": s["course"], "instructor": s["instructor"], **{
-                    k: p[k] for k in ("answers", "comment", "problems")}} for s, p in plans]}
     results = []
-    for s, p in plans:
+    for s in pending:
+        p = evaluation.build_plan(evaluation.parse_form(portal().mis_get(
+            "/mis/student/te/question.do", {"sectionId": s["section_id"]})), comment)
         if not p["problems"]:
             portal().mis_post("/mis/student/te/submit.do", {"sectionId": s["section_id"]}, p["payload"])
         results.append({"course": s["course"], "submitted": not p["problems"], "problems": p["problems"]})
-    return {"dry_run": False, "results": results,
-            "still_pending": sum(s["status"] == "pending" for s in portal().mis_evaluations())}
+    return {"results": results, "still_pending": sum(s["status"] == "pending" for s in portal().mis_evaluations())}
 
 
-def mis_evaluate(course: str, comment: str = "", confirm: bool = False) -> dict:
-    """WRITE: fill in the MIS evaluation of ONE course (name, instructor or section id) with the highest option for every
-    rating question. Dry-run unless confirm=true; show the dry-run to the user and get their explicit OK first."""
-    return _evaluate(course, comment, confirm)
+def mis_evaluate(course: str, comment: str = "") -> dict:
+    """Fill in the MIS evaluation of ONE course (name, instructor or section id) with the highest option for every rating question."""
+    return _evaluate(course, comment)
 
 
-def mis_evaluate_all(comment: str = "", confirm: bool = False) -> dict:
-    """WRITE: like mis_evaluate for ALL pending evaluations. Dry-run unless confirm=true."""
-    return _evaluate(None, comment, confirm)
+def mis_evaluate_all(comment: str = "") -> dict:
+    """Fill in every pending MIS evaluation the same way as mis_evaluate."""
+    return _evaluate(None, comment)
 
 
 READ = [site_info, list_courses, course_contents, list_assignments, submission_status, upcoming_deadlines,

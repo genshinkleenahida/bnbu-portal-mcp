@@ -28,7 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
             kind, d = (int if "int" in str(prm.annotation) else str), prm.default
             flag = "--" + name.replace("_", "-")
             if d is inspect.Parameter.empty:
-                sp.add_argument(name, type=kind)
+                extra = {"nargs": "+"} if "list" in str(prm.annotation) else {}
+                sp.add_argument(name, type=kind, **extra)
             elif isinstance(d, bool):
                 sp.add_argument("--no-" + flag[2:] if d else flag, dest=name, action="store_false" if d else "store_true")
             elif "list" in str(prm.annotation):
