@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bnbu-portal-mcp"
 version = "0.1.0"
-description = "MCP server + CLI for BNBU iSpace (Moodle): courses, assignments, deadlines, files; write tools locked by default"
+description = "MCP server + CLI for BNBU iSpace (Moodle): courses, assignments, deadlines, files"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

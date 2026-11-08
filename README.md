@@ -17,8 +17,8 @@
 - **公告和文字信息**：读取老师发的公告、课程页面文字（考试时间、考试范围等）、通知和消息，并可按关键词搜索（默认搜“考试/期中/期末/exam/quiz”等）
 - **新通知提醒**：只显示你还没看过的新通知（`portal-mcp new-notices`）；`portal-mcp watch` 会定时检查并弹出桌面通知（Windows / macOS / Linux），可加 `--deadlines 24`（小时） 提醒临近的截止日期。已读记录只保存在本机配置目录
 - **教学评估（MIS）**：查看待评估的课程（只读；没有开放时就是空列表）
-- **提交作业**（默认关闭，设置 `ISPACE_ALLOW_WRITE=1` 开启）：上传文件并提交。开启后也只会先预演，必须明确确认才会真正提交
-- **填写教学评估**（默认关闭）：开启后默认只预演，会列出课程和将提交的答案（每题选最高档，评语默认留空），必须明确确认才会提交
+- **提交作业**：一次上传一个或多个文件，存成同一份草稿，然后提交评分。例如 `portal-mcp upload-and-save-submission 123 a.pdf b.docx`（MCP 参数：`assignid`、`file_paths`）
+- **填写教学评估**：对待评估课程的每道评分题选最高档（评语默认留空）并提交
 
 ## 安装
 
@@ -55,8 +55,8 @@ Lets AI assistants (Claude, Cursor, Codex, etc.) read your courses, materials an
 - **Announcements & course text**: read teachers' announcements, course page text (exam dates, scope, etc.), notifications and messages; search by keyword (defaults to exam / midterm / final / quiz and similar)
 - **New-notice reminders**: show only notices you haven't seen (`portal-mcp new-notices`); `portal-mcp watch` polls and pops up a desktop notification (Windows / macOS / Linux), and `--deadlines 24` (hours) also reminds you of upcoming due dates. The seen-list is kept only in your local config folder
 - **Teaching evaluation (MIS)**: lists the courses waiting to be evaluated (read-only; an empty list just means none is listed right now)
-- **Submitting** (off by default): upload and submit files; even when enabled it only dry-runs until you explicitly confirm
-- **Filling in evaluations** (off by default): when enabled it only dry-runs, showing the courses and the answers it would send (highest option for every question, comment left empty), until you explicitly confirm
+- **Submitting**: upload one or more files into the same draft, then submit for grading. Example: `portal-mcp upload-and-save-submission 123 a.pdf b.docx` (MCP arguments: `assignid`, `file_paths`)
+- **Filling in evaluations**: submits the highest option for every rating question (comment left empty)
 
 ### Install
 

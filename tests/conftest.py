@@ -16,7 +16,7 @@ PRIV = secrets.randbelow(sm2.N - 1) + 1
 PUB = sm2._mul(PRIV, sm2.G)
 PUB_HEX = PUB[0].to_bytes(32, "big").hex() + PUB[1].to_bytes(32, "big").hex()
 SEC_A, SEC_B = "a" * 32, "b" * 32
-LOG = {"calls": [], "submitted": [], "saved": []}  # reset per test
+LOG = {"calls": [], "submitted": [], "saved": [], "uploads": [], "next_itemid": 1}  # reset per test
 
 
 def decrypt(h: str) -> str:
@@ -45,7 +45,7 @@ def moodle(fn: str, p: dict):
             "timecreated": NOW - 500, "userfromfullname": "X"}] if p.get("type") == "notifications" and p.get("read") == "0" else []},
     }
     if fn in ("mod_assign_save_submission", "mod_assign_submit_for_grading"):
-        LOG["saved"].append(fn)
+        LOG["saved"].append({"fn": fn, "itemid": p.get("plugindata[files_filemanager]")})
         return []
     return ws.get(fn, {"exception": "x", "errorcode": "accessexception", "message": "no such fn"})
 
@@ -74,6 +74,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, n = urlparse(self.path).path, int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(n)
+        if path == "/webservice/upload.php":
+            text = raw.decode(errors="ignore")
+            names = re.findall(r'Content-Disposition:[^\r\n]*filename="([^"]*)"', text)
+            m = re.search(r'name="itemid"\r\n\r\n([0-9]+)', text)
+            asked = m.group(1) if m else "0"
+            itemid = asked if asked != "0" else str(LOG["next_itemid"])
+            if asked == "0":
+                LOG["next_itemid"] += 1
+            LOG["uploads"].append({"itemid": itemid, "files": names, "asked": asked})
+            return self.reply([{"itemid": int(itemid), "filename": name} for name in names])
         form = {k: v[0] for k, v in parse_qs(raw.decode(errors="ignore")).items()}
         if path == "/login/token.php":
             return self.reply({"token": TOKEN} if form.get("password") == PW else {"error": "Invalid login", "errorcode": "invalidlogin"})
@@ -114,14 +124,13 @@ def site(tmp_path, monkeypatch):
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_port}"
-    for k in ("ISPACE_TOKEN", "ISPACE_ALLOW_WRITE"):
-        monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("ISPACE_TOKEN", raising=False)
     for k in ("ISPACE_URL", "ISPACE_SSO_URL", "ISPACE_MIS_URL", "ISPACE_OA_URL"):
         monkeypatch.setenv(k, url)
     monkeypatch.setenv("ISPACE_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.setenv("ISPACE_USERNAME", "u1")
     monkeypatch.setenv("ISPACE_PASSWORD", PW)
-    LOG.update(calls=[], submitted=[], saved=[])
+    LOG.update(calls=[], submitted=[], saved=[], uploads=[], next_itemid=1)
     EVAL["open"] = True
     from portal_mcp import tools
     tools._client = tools._portal = None

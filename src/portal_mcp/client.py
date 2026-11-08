@@ -22,10 +22,6 @@ def base_url() -> str:
     return os.environ.get("ISPACE_URL", "https://ispace.bnbu.edu.cn").rstrip("/")
 
 
-def write_allowed() -> bool:
-    return os.environ.get("ISPACE_ALLOW_WRITE") == "1"
-
-
 def config_dir() -> Path:
     if os.environ.get("ISPACE_CONFIG_DIR"):
         return Path(os.environ["ISPACE_CONFIG_DIR"]).expanduser()
@@ -218,20 +214,25 @@ class ISpace:
             raise ISpaceError(f"Download failed ({type(e).__name__}).") from None
         return {"path": str(target), "bytes": target.stat().st_size}
 
-    def upload_and_save_submission(self, assignid: int, file_path: str) -> dict:
-        p = Path(file_path).expanduser()
+    def upload_and_save_submission(self, assignid: int, file_paths: list[str]) -> dict:
+        # itemid 0 starts a new draft; later files must reuse that id or each one replaces the draft.
+        paths = [Path(p).expanduser() for p in file_paths]
+        if not paths:
+            raise ISpaceError("No files given.")
+        itemid = 0
         try:
-            with open(p, "rb") as fh:
-                d = self.http.post(f"{base_url()}/webservice/upload.php", files={"file_1": (p.name, fh)},
-                                   data={"token": self.token(), "filearea": "draft", "itemid": "0"}).json()
-            itemid = d[0]["itemid"]
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
+            for p in paths:
+                with open(p, "rb") as fh:
+                    d = self.http.post(f"{base_url()}/webservice/upload.php", files={"file_1": (p.name, fh)},
+                                       data={"token": self.token(), "filearea": "draft", "itemid": str(itemid)}).json()
+                itemid = d[0]["itemid"]
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, OSError):
             raise ISpaceError("Upload failed.") from None
         warn = self.call("mod_assign_save_submission", assignmentid=int(assignid),
                          plugindata={"files_filemanager": itemid})
         if warn:
             raise ISpaceError(f"save_submission returned warnings: {json.dumps(warn)[:300]}")
-        return {"saved": True, "assignid": int(assignid), "file": p.name,
+        return {"saved": True, "assignid": int(assignid), "files": [p.name for p in paths],
                 "note": "Saved as a draft; not yet submitted for grading."}
 
     def submit_for_grading(self, assignid: int) -> dict:

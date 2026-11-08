@@ -60,17 +60,28 @@ def test_notify_never_raises(monkeypatch):
     assert notices.notify("t", "b") is False
 
 
-def test_write_tools_hidden_and_gated(site, monkeypatch, tmp_path):
-    names = lambda: {t.name for t in build()._tool_manager.list_tools()}
-    assert "submit_for_grading" not in names() and "mis_evaluate" not in names() and "list_courses" in names()
+def test_write_tools_save_and_submit(site, tmp_path):
+    listed = {t.name: t for t in build()._tool_manager.list_tools()}
+    assert {"upload_and_save_submission", "submit_for_grading", "mis_evaluate", "mis_evaluate_all", "list_courses"} <= set(listed)
+    params = listed["upload_and_save_submission"].parameters["properties"]
+    assert params["file_paths"]["type"] == "array" and params["file_paths"]["items"]["type"] == "string"
+    assert "confirm" not in params and "file_path" not in params
+    assert tools.submit_for_grading(99)["submitted"]
+    assert LOG["saved"] == [{"fn": "mod_assign_submit_for_grading", "itemid": None}]
+    a, b = tmp_path / "a.txt", tmp_path / "b.pdf"
+    a.write_text("x")
+    b.write_bytes(b"y")
+    LOG["saved"].clear()
+    res = tools.upload_and_save_submission(99, [str(a), str(b)])
+    assert res["saved"] and res["files"] == ["a.txt", "b.pdf"]
+    assert [u["files"] for u in LOG["uploads"]] == [["a.txt"], ["b.pdf"]]
+    assert {u["itemid"] for u in LOG["uploads"]} == {LOG["uploads"][0]["itemid"]}
+    assert LOG["uploads"][0]["asked"] == "0" and LOG["uploads"][1]["asked"] == LOG["uploads"][0]["itemid"]
+    assert LOG["saved"] == [{"fn": "mod_assign_save_submission", "itemid": LOG["uploads"][0]["itemid"]}]
+    uploaded = len(LOG["uploads"])
     with pytest.raises(ISpaceError):
-        tools.submit_for_grading(99, confirm=True)
-    monkeypatch.setenv("ISPACE_ALLOW_WRITE", "1")
-    assert "submit_for_grading" in names()
-    assert tools.submit_for_grading(99)["dry_run"] and LOG["saved"] == []
-    f = tmp_path / "a.txt"
-    f.write_text("x")
-    assert tools.upload_and_save_submission(99, str(f))["dry_run"] and LOG["saved"] == []
+        tools.upload_and_save_submission(99, [str(a), str(tmp_path / "missing")])
+    assert len(LOG["uploads"]) == uploaded
 
 
 def test_mis_evaluations_list_and_closed_is_empty(site):
@@ -88,26 +99,26 @@ def test_evaluation_picks_best_by_label_not_by_position():
     assert evaluation.build_plan(odd)["problems"] and evaluation.build_plan({"questions": [], "texts": []})["problems"]
 
 
-def test_evaluate_dry_run_then_confirm(site, monkeypatch):
-    with pytest.raises(ISpaceError):
-        tools.mis_evaluate_all(confirm=True)  # gate: ISPACE_ALLOW_WRITE not set
-    monkeypatch.setenv("ISPACE_ALLOW_WRITE", "1")
-    dry = tools.mis_evaluate_all()
-    assert dry["dry_run"] and len(dry["plans"]) == 1 and LOG["submitted"] == []
-    res = tools.mis_evaluate("Compilers", confirm=True)
-    assert res["results"][0]["submitted"]
+def test_evaluate_submits(site):
+    res = tools.mis_evaluate("Compilers")
+    assert res["results"][0]["submitted"] and res["still_pending"] == 1
     sec, form = LOG["submitted"][0]
     assert sec == SEC_A and form["q1"] == "q11" and form["Submit"] == "submit"
+    assert tools.mis_evaluate_all()["results"][0]["submitted"] and len(LOG["submitted"]) == 2
 
 
-def test_cli_commands_follow_tools(site, capsys):  # noqa
+def test_cli_commands_follow_tools(site, capsys, tmp_path):  # noqa
     cli.main(["search-text", "--keywords", "Midterm"])
     assert json.loads(capsys.readouterr().out)[0]["snippets"]
     cli.main(["mis-evaluations"])
     assert len(json.loads(capsys.readouterr().out)) == 2
-    with pytest.raises(SystemExit) as e:
-        cli.main(["submit-for-grading", "99", "--confirm"])
-    assert "ISPACE_ALLOW_WRITE" in str(e.value.code)
+    cli.main(["submit-for-grading", "99"])
+    assert json.loads(capsys.readouterr().out)["submitted"]
+    a, b = tmp_path / "a.txt", tmp_path / "b.docx"
+    a.write_text("x")
+    b.write_text("y")
+    cli.main(["upload-and-save-submission", "99", str(a), str(b)])
+    assert json.loads(capsys.readouterr().out)["files"] == ["a.txt", "b.docx"]
 
 
 def test_credentials_env_first_then_keychain_login_logout(site, monkeypatch, capsys):
